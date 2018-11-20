@@ -2,12 +2,12 @@ import numpy as np
 import pandas as pd
 import keras
 from keras.preprocessing import text, sequence
-from model.attention_seq2seq import seq2seq_attention
+from models.attention_seq2seq import seq2seq_attention
 from tqdm import tqdm
 
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def make_target_input(target):

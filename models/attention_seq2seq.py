@@ -2,17 +2,20 @@ import numpy as np
 import heapq
 from keras import backend as K
 from keras.layers import Input, Embedding, Bidirectional
-from keras.layers import concatenate
+from keras.layers import TimeDistributed
 from keras.layers import RNN, LSTM, GRUCell
-from keras.layers import Dense, Lambda
+from keras.layers import Dense, Lambda, concatenate
 from keras.models import Model
-from model.custom_layers import DenseAnnotationAttention
+from models.custom_layers import DenseAnnotationAttention
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 class seq2seq_attention:
     def __init__(self, num_encoder_tokens, embedding_dim,
                  hidden_dim, num_decoder_tokens,
-                 input_tokenizer, target_tokenizer):
+                 input_tokenizer=None, target_tokenizer=None):
         self.num_encoder_tokens = num_encoder_tokens
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
@@ -35,15 +38,15 @@ class seq2seq_attention:
 
     def get_model(self):
         # Input text
-        encoder_inputs = Input(shape=(None,), name='input_text')
+        encoder_inputs = Input(shape=(None, None,), name='input_text')
         # Input summary
         decoder_inputs = Input(shape=(None,), name='input_summary')
 
         # word embedding layer for text
-        encoder_inputs_emb = Embedding(input_dim=self.num_encoder_tokens,
-                                       output_dim=self.embedding_dim,
-                                       mask_zero=True,
-                                       name='embedding_text')(encoder_inputs)
+        encoder_inputs_emb = TimeDistributed(Embedding(input_dim=self.num_encoder_tokens,
+                                                       output_dim=self.embedding_dim,
+                                                       mask_zero=True,
+                                                       name='embedding_text'))(encoder_inputs)
         # word embedding layer for summary
         decoder_inputs_emb = Embedding(input_dim=self.num_decoder_tokens,
                                        output_dim=self.embedding_dim,
@@ -51,16 +54,17 @@ class seq2seq_attention:
                                        name='embedding_summary')(decoder_inputs)
 
         # Bidirectional LSTM encoder
-        encoder_out = Bidirectional(LSTM(self.hidden_dim // 2,
-                                         return_sequences=True,
-                                         return_state=True),
-                                    merge_mode='concat',
-                                    name='encoder')(encoder_inputs_emb)
+        # (batch, doctument, sentence, embedding)
+        encoder_char = TimeDistributed(LSTM(self.hidden_dim), name='character_encoder')(encoder_inputs_emb)
+
+        encoder_out = Bidirectional(LSTM(self.hidden_dim // 2, return_sequences=True, return_state=True),
+                                    merge_mode='concat', name='sentence_encoder')(encoder_char)
 
         encoder_o = encoder_out[0]
         initial_h_lstm = concatenate([encoder_out[1], encoder_out[2]])
         initial_c_lstm = concatenate([encoder_out[3], encoder_out[4]])
-        initial_decoder_state = Dense(self.hidden_dim, activation='tanh', name='decoder_state')(concatenate([initial_h_lstm, initial_c_lstm]))
+        initial_decoder_state = Dense(self.hidden_dim, activation='tanh', name='decoder_state')(concatenate([initial_h_lstm,
+                                                                                                             initial_c_lstm]))
 
         # LSTM decoder + attention
         initial_attention_h = Lambda(lambda x: K.zeros_like(x)[:, 0, :])(encoder_o)
@@ -78,8 +82,7 @@ class seq2seq_attention:
                                               name='decoder')(decoder_inputs_emb,
                                                               initial_state=initial_state,
                                                               constants=encoder_o)
-        decoder_o = Dense(self.hidden_dim * 2, name='decoder_dense')(concatenate([decoder_o,
-                                                                                  decoder_inputs_emb]))
+        decoder_o = Dense(self.hidden_dim * 2, name='decoder_dense')(decoder_o)
         y_pred = Dense(self.num_decoder_tokens,
                        activation='softmax', name='summary_out')(decoder_o)
 
@@ -121,7 +124,7 @@ class seq2seq_attention:
 
         h1_new = h1_and_state_new[0]
         updated_state = h1_and_state_new[1:]
-        h2_new = self.summaryModel.get_layer('decoder_dense')(concatenate([h1_new, y_emb]))
+        h2_new = self.summaryModel.get_layer('decoder_dense')(h1_new)
         y_pred_new = self.summaryModel.get_layer('summary_out')(h2_new)
 
         decoder_model = Model([y, x_enc_new] + initial_state_new,
