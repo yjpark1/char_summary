@@ -36,14 +36,25 @@ summ_input = make_target_input(summ)
 summ_output = make_target_output(summ)
 
 # split train/test
-(txt, summ_input, summ_output), valid_dataset = train_valid_split(txt, summ_input, summ_output, valid_index)
-
+train_dataset, valid_dataset = train_valid_split(txt, summ_input, summ_output, valid_index)
+txt, summ_input, summ_output = train_dataset
+val_txt, val_summ_input, val_summ_output = valid_dataset
 # generator
 gen = DataGenerator(text=txt, summary_input=summ_input,
                     summary_target=summ_output,
                     num_token_output=len(t_summ.index_word),
+                    idx_txt_split=t_txt.word_index['.'],
                     batch_size=16)
+gen.to_multi_sentence()
 gen.sort_data()
+
+val_gen = DataGenerator(text=val_txt, summary_input=val_summ_input,
+                        summary_target=val_summ_output,
+                        num_token_output=len(t_summ.index_word),
+                        idx_txt_split=t_txt.word_index['.'],
+                        batch_size=10)
+val_gen.to_multi_sentence()
+val_gen.sort_data()
 
 # train model
 model = seq2seq_attention(num_encoder_tokens=len(t_txt.index_word), embedding_dim=64,
@@ -60,7 +71,7 @@ if flag_train:
                                               restore_best_weights=True)
 
     summaryModel.fit_generator(generator=gen,
-                               validation_data=valid_dataset,
+                               validation_data=val_gen,
                                epochs=150, use_multiprocessing=True,
                                workers=2, verbose=2, callbacks=[checkpoint, earlystop])
 

@@ -1,13 +1,7 @@
 import numpy as np
-import pandas as pd
 import keras
 from keras.preprocessing import text, sequence
 from models.attention_seq2seq import seq2seq_attention
-from tqdm import tqdm
-
-import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def make_target_input(target):
@@ -40,22 +34,29 @@ def make_onehot_target(target, num_token_output):
 
 class DataGenerator(keras.utils.Sequence):
     """Generates data for Keras"""
-    def __init__(self, text, summary_input, summary_target, num_token_output, batch_size=16):
+    def __init__(self, text, summary_input, summary_target,
+                 num_token_output, idx_txt_split, batch_size=16):
         """Initialization"""
-        self.text = text
-        self.summary_input = summary_input
-        self.summary_target = summary_target
+        self.text = np.array(text)
+        self.summary_input = np.array(summary_input)
+        self.summary_target = np.array(summary_target)
         self.batch_size = batch_size
         self.shuffle = False
         self.indexes = np.arange(len(text))
         self.num_token_output = num_token_output
+        self.idx_txt_split = idx_txt_split
+
+    def to_multi_sentence(self):
+        out = []
+        for x in self.text:
+            x = np.array(x)
+            split_point = np.where(x == self.idx_txt_split)[0]
+            x = np.array(np.split(x, split_point + 1))
+            idx = np.array([len(a) for a in x]) > 1
+            out.append(x[idx])
+        self.text = np.array(out)
 
     def sort_data(self):
-        # make numpy array
-        self.text = np.array(self.text)
-        self.summary_input = np.array(self.summary_input)
-        self.summary_target = np.array(self.summary_target)
-
         # sort by length: text, summary_input, summary_target
         text_length = [len(x) for x in self.text]
         index = np.argsort(text_length)
@@ -85,6 +86,14 @@ class DataGenerator(keras.utils.Sequence):
 
         return X, y
 
+    def pad_sentence(self, x, maxlen):
+        shp = x.shape
+        add = maxlen - shp[0]
+        if add > 0:
+            add = np.zeros(shape=(add, shp[-1]))
+            x = np.concatenate([x, add], axis=0)
+        return x
+
     def __data_generation(self, indexes):
         """Generates data containing batch_size samples
         # X : (n_samples, *dim, n_channels)
@@ -94,7 +103,8 @@ class DataGenerator(keras.utils.Sequence):
         batch_summary_input = self.summary_input[indexes]
         batch_summary_target = self.summary_target[indexes]
 
-        max_len_txt = np.max([len(x) for x in batch_text])
+        max_sen_txt = np.max([len(x) for x in batch_text])
+        max_char_txt = np.max([[len(x) for x in doc] for doc in batch_text])
         max_len_summ_input = np.max([len(x) for x in batch_summary_input])
 
         # preprocessing
@@ -102,7 +112,14 @@ class DataGenerator(keras.utils.Sequence):
         batch_summary_target = self.__make_onehot_target(batch_summary_target)
 
         # 2) pad sequence
-        batch_text = sequence.pad_sequences(batch_text, maxlen=max_len_txt, truncating='post', padding='pre')
+        ## pad char
+        batch_text = [sequence.pad_sequences(x, maxlen=max_char_txt,
+                                             truncating='post',
+                                             padding='post') for x in batch_text]
+
+        batch_text = [self.pad_sentence(x, maxlen=max_sen_txt) for x in batch_text]
+        batch_text = np.array(batch_text)
+
         batch_summary_input = sequence.pad_sequences(batch_summary_input, maxlen=max_len_summ_input, padding='post')
         batch_summary_target = sequence.pad_sequences(batch_summary_target, maxlen=max_len_summ_input, padding='post')
 
@@ -128,20 +145,8 @@ def train_valid_split(txt, summ_input, summ_output, valid_index):
     summ_input = np.delete(summ_input, valid_index).tolist()
     summ_output = np.delete(summ_output, valid_index).tolist()
 
-    # preprocessing validation data
-    max_len_txt = np.max([len(x) for x in valid_text])
-    max_len_summ_input = np.max([len(x) for x in valid_summary_input])
-
-    # 1) make onehot target
-    valid_summary_target = make_onehot_target(valid_summary_target, len(t_summ.index_word))
-
-    # 2) pad sequence
-    valid_text = sequence.pad_sequences(valid_text, maxlen=max_len_txt, truncating='post', padding='pre')
-    valid_summary_input = sequence.pad_sequences(valid_summary_input, maxlen=max_len_summ_input, padding='post')
-    valid_summary_target = sequence.pad_sequences(valid_summary_target, maxlen=max_len_summ_input, padding='post')
-
     train_dataset = (txt, summ_input, summ_output)
-    valid_dataset = ([valid_text, valid_summary_input], valid_summary_target)
+    valid_dataset = (valid_text, valid_summary_input, valid_summary_target)
 
     return train_dataset, valid_dataset
 
@@ -169,14 +174,25 @@ if __name__ == '__main__':
     summ_output = make_target_output(summ)
 
     # split train/test
-    (txt, summ_input, summ_output), valid_dataset = train_valid_split(txt, summ_input, summ_output, valid_index)
-
+    train_dataset, valid_dataset = train_valid_split(txt, summ_input, summ_output, valid_index)
+    txt, summ_input, summ_output = train_dataset
+    val_txt, val_summ_input, val_summ_output = valid_dataset
     # generator
     gen = DataGenerator(text=txt, summary_input=summ_input,
                         summary_target=summ_output,
                         num_token_output=len(t_summ.index_word),
+                        idx_txt_split=t_txt.word_index['.'],
                         batch_size=16)
+    gen.to_multi_sentence()
     gen.sort_data()
+
+    val_gen = DataGenerator(text=val_txt, summary_input=val_summ_input,
+                            summary_target=val_summ_output,
+                            num_token_output=len(t_summ.index_word),
+                            idx_txt_split=t_txt.word_index['.'],
+                            batch_size=16)
+    val_gen.to_multi_sentence()
+    val_gen.sort_data()
 
     # train model
     model = seq2seq_attention(num_encoder_tokens=len(t_txt.index_word), embedding_dim=64,
@@ -186,7 +202,7 @@ if __name__ == '__main__':
     summaryModel.compile(optimizer='Adam', loss='categorical_crossentropy')
 
     summaryModel.fit_generator(generator=gen,
-                               validation_data=valid_dataset,
+                               validation_data=val_gen,
                                epochs=2, use_multiprocessing=True,
                                workers=2, verbose=2)
 

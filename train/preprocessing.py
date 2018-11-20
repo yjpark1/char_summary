@@ -62,19 +62,19 @@ if __name__ == '__main__':
 
     # make form of (sample, sentences, characters)
     # summary = [make_char_form(x) for x in summary]
-    text = [make_char_form(x) for x in text]
+    # text = [make_char_form(x) for x in text]
 
     # remove token
     summary = [remove_token(x) for x in summary]
-    text = [[remove_token(x) for x in doc] for doc in text]
+    text = [remove_token(x) for x in text]
 
     # character-level decomposition
     summary = [hgtk.text.decompose(x) for x in summary]
-    text = [[hgtk.text.decompose(x) for x in doc] for doc in text]
+    text = [hgtk.text.decompose(x) for x in text]
 
     # save text & summary for keras.prerocessing.text format
     summary_char = [morph2doc(x, out_seq=True) for x in summary]
-    text_char = [[morph2doc(x) for x in doc] for doc in text]
+    text_char = [morph2doc(x) for x in text]
 
     np.save('datasets/text.npy', text_char)
     np.save('datasets/summary.npy', summary_char)
