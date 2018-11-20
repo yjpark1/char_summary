@@ -104,7 +104,8 @@ class DataGenerator(keras.utils.Sequence):
         batch_summary_target = self.summary_target[indexes]
 
         max_sen_txt = np.max([len(x) for x in batch_text])
-        max_char_txt = np.max([[len(x) for x in doc] for doc in batch_text])
+        max_char_txt = np.max([np.max([len(x) for x in doc]) for doc in batch_text])
+        max_char_txt.flatten()
         max_len_summ_input = np.max([len(x) for x in batch_summary_input])
 
         # preprocessing
