@@ -151,8 +151,8 @@ if __name__ == '__main__':
     type_inference = 'beamsearch'
     valid_index = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
 
-    text_morph = np.load('dataset/text.npy').tolist()
-    summary_morph = np.load('dataset/summary.npy').tolist()
+    text_morph = np.load('datasets/text.npy').tolist()
+    summary_morph = np.load('datasets/summary.npy').tolist()
 
     # make sequence: text
     t_txt = text.Tokenizer(filters='')
