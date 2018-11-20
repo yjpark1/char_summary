@@ -184,51 +184,14 @@ if __name__ == '__main__':
                               input_tokenizer=t_txt, target_tokenizer=t_summ)
     summaryModel = model.get_model()
     summaryModel.compile(optimizer='Adam', loss='categorical_crossentropy')
-    if flag_train:
-        checkpoint = keras.callbacks.ModelCheckpoint('results/seq2seq_atten.h5',
-                                                     monitor='val_loss', save_best_only=True,
-                                                     save_weights_only=True,
-                                                     mode='min')
-        earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, mode='min',
-                                                  restore_best_weights=True)
 
-        summaryModel.fit_generator(generator=gen,
-                                   validation_data=valid_dataset,
-                                   epochs=150, use_multiprocessing=True,
-                                   workers=2, verbose=2, callbacks=[checkpoint, earlystop])
+    summaryModel.fit_generator(generator=gen,
+                               validation_data=valid_dataset,
+                               epochs=2, use_multiprocessing=True,
+                               workers=2, verbose=2)
 
-        summaryModel.save_weights('results/seq2seq_atten.h5')
 
-    else:
-        summaryModel.load_weights('results/seq2seq_atten.h5')
 
-    model.summaryModel = summaryModel
-
-    # build inference model
-    model.build_inference_model()
-
-    # run inference
-    print('start inference...')
-
-    pred = []
-    for i in tqdm(range(len(text_morph))):
-        if type_inference == 'beamsearch':
-            p = model.inference_beamsearch(input_text=text_morph[i])
-            p = p[0][np.argmax(p[1])]
-
-        elif type_inference == 'greedy':
-            p = model.inference_greedy(input_text=text_morph[i])
-            p = p[0]
-
-        pred.append(p)
-
-    np.save('results/pred_' + type_inference + '.npy', pred)
-
-    candidate = np.load('results/pred_' + type_inference + '.npy').tolist()
-    pred = np.array([x for x in candidate])
-
-    re = pd.DataFrame({'true': summary_morph, 'pred': pred, 'text': text_morph})
-    re.to_csv('results/result_seq2seq_attention_' + type_inference + '.csv', encoding='cp949')
 
 
 
