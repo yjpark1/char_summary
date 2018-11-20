@@ -37,21 +37,44 @@ def morph2doc(x, out_seq=False):
     return x
 
 
+def make_char_form(x):
+    out = np.array(x.split('. '))
+    out = out[np.array([len(x) for x in out]) > 0]
+    out = [x + '.' for x in out]
+    return out
+
+
+def make_summ_char(x):
+    out = []
+    for sen in x:
+        sen = ' '.join(sen)
+        sen = sen.replace('  ', ' <s>')
+        out.append(sen)
+    out[0] = '<start> ' + out[0]
+    out[-1] = out[-1] + ' <stop>'
+
+    return out
+
+
 if __name__ == '__main__':
     paths = glob.glob('datasets/labeled_finance/*.csv')
     summary, text = read_labeled_file(paths)
 
+    # make form of (sample, sentences, characters)
+    # summary = [make_char_form(x) for x in summary]
+    text = [make_char_form(x) for x in text]
+
     # remove token
     summary = [remove_token(x) for x in summary]
-    text = [remove_token(x) for x in text]
+    text = [[remove_token(x) for x in doc] for doc in text]
 
     # character-level decomposition
-    text = [hgtk.text.decompose(x) for x in text]
     summary = [hgtk.text.decompose(x) for x in summary]
+    text = [[hgtk.text.decompose(x) for x in doc] for doc in text]
 
     # save text & summary for keras.prerocessing.text format
-    text_char = [morph2doc(x) for x in text]
     summary_char = [morph2doc(x, out_seq=True) for x in summary]
+    text_char = [[morph2doc(x) for x in doc] for doc in text]
 
     np.save('datasets/text.npy', text_char)
     np.save('datasets/summary.npy', summary_char)
