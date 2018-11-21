@@ -8,6 +8,7 @@ from train.TrainWithLabeledText import (make_target_input,
                                         train_valid_split,
                                         DataGenerator)
 from tqdm import tqdm
+import pickle
 
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
@@ -44,7 +45,7 @@ if __name__ == '__main__':
                         summary_target=summ_output,
                         num_token_output=len(t_summ.index_word),
                         idx_txt_split=t_txt.word_index['.'],
-                        batch_size=5)
+                        batch_size=16)
     gen.to_multi_sentence()
     gen.sort_data()
 
@@ -63,17 +64,24 @@ if __name__ == '__main__':
     summaryModel = model.get_model()
     summaryModel.compile(optimizer='Adam', loss='categorical_crossentropy')
     if flag_train:
-        checkpoint = keras.callbacks.ModelCheckpoint('results/seq2seq_atten.h5',
-                                                     monitor='val_loss', save_best_only=True,
-                                                     save_weights_only=True,
-                                                     mode='min')
-        earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, mode='min',
+        checkpoint_val = keras.callbacks.ModelCheckpoint('results/seq2seq_atten_val.h5',
+                                                         monitor='val_loss', save_best_only=True,
+                                                         save_weights_only=True,
+                                                         mode='min')
+        checkpoint_train = keras.callbacks.ModelCheckpoint('results/seq2seq_atten_train.h5',
+                                                           monitor='loss', save_best_only=True,
+                                                           save_weights_only=True,
+                                                           mode='min')
+        earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=15, mode='min',
                                                   restore_best_weights=True)
 
-        summaryModel.fit_generator(generator=gen,
-                                   validation_data=val_gen,
-                                   epochs=150, use_multiprocessing=False,
-                                   workers=2, verbose=2)
+        hist = summaryModel.fit_generator(generator=gen,
+                                          validation_data=val_gen,
+                                          epochs=150, use_multiprocessing=False,
+                                          workers=2, verbose=2, callbacks=[checkpoint_train, checkpoint_val])
+
+        with open('hist.pkl', 'wb') as f:
+            pickle.dump(hist.history, f)
 
         summaryModel.save_weights('results/seq2seq_atten.h5')
 
